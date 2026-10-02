@@ -79,6 +79,8 @@ const getJobs = () => JSON.parse(localStorage.getItem("jobs") || "{}");
 const setJobs = (j) => localStorage.setItem("jobs", JSON.stringify(j));
 
 $("key").value = sessionStorage.getItem("key") || "";
+let keyTimer;
+$("key").addEventListener("input", () => { sessionStorage.setItem("key", $("key").value); clearTimeout(keyTimer); keyTimer = setTimeout(loadPrompts, 400); });
 $("key").addEventListener("change", () => { sessionStorage.setItem("key", $("key").value); loadPrompts(); });
 
 function log(msg, cls = "") { $("log").innerHTML = `<span class="${cls}">${msg}</span>`; }
@@ -89,7 +91,9 @@ async function api(path, body) {
     headers: { "Content-Type": "application/json", "x-admin-key": $("key").value },
     body: body ? JSON.stringify(body) : undefined,
   });
-  const d = await r.json();
+  const text = await r.text();
+  let d; try { d = JSON.parse(text); } catch { d = null; }
+  if (!d) throw new Error(`Server error ${r.status} (not JSON). Open Vercel > Logs for the real error. Start of response: ${text.slice(0, 160)}`);
   if (!r.ok) throw new Error(d.error || "Request failed");
   return d;
 }
