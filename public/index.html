@@ -74,7 +74,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-let placeId = null;
+let places = [], selected = null;
 const getJobs = () => JSON.parse(localStorage.getItem("jobs") || "{}");
 const setJobs = (j) => localStorage.setItem("jobs", JSON.stringify(j));
 
@@ -116,10 +116,10 @@ $("jobSelect").addEventListener("change", syncBackBtn);
 $("findBtn").onclick = async () => {
   try {
     log("Searching...");
-    const { places } = await api("find", { query: $("query").value });
+    places = (await api("find", { query: $("query").value })).places;
     if (!places.length) return log("No results.", "err");
     $("places").innerHTML = places.map((p, i) => `<label class="place"><input type="radio" name="place" value="${p.id}" ${i === 0 ? "checked" : ""}>${p.name}<small>${p.address || ""} ${p.rating ? "· " + p.rating + "★" : ""}</small></label>`).join("");
-    const pick = () => { placeId = document.querySelector("input[name=place]:checked").value; $("frontBtn").disabled = false; };
+    const pick = () => { const id = document.querySelector("input[name=place]:checked").value; selected = places.find((p) => p.id === id); $("frontBtn").disabled = false; };
     $("places").onchange = pick; pick();
     if (!$("siteName").value) $("siteName").value = places[0].name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     log("Pick the right business, then continue to step 2.");
@@ -130,9 +130,9 @@ $("frontBtn").onclick = async () => {
   $("frontBtn").disabled = true;
   try {
     log("Pulling Maps data, generating the site, deploying. This takes 1-3 minutes...");
-    const d = await api("frontend", { placeId, siteName: $("siteName").value, prompt: $("frontPrompt").value });
+    const d = await api("frontend", { place: selected.raw, siteName: $("siteName").value, prompt: $("frontPrompt").value });
     const jobs = getJobs();
-    jobs[d.name] = { name: d.name, placeId: d.placeId, files: d.files, frontendUrl: d.url };
+    jobs[d.name] = { name: d.name, business: d.business, imageUrls: d.imageUrls, files: d.files, frontendUrl: d.url };
     setJobs(jobs);
     log(`Frontend live: <a href="${d.url}" target="_blank">${d.url}</a>\nFiles: ${Object.keys(d.files).join(", ")}`, "ok");
     loadJobs();
