@@ -1,11 +1,13 @@
-import { guard, slug, placeDetails, downloadPhotos, generateFiles, deployToVercel, textFile } from "../lib/shared.js";
+import { guard, slug, buildBusiness, placeExtras, downloadImages, generateFiles, deployToVercel, textFile } from "../lib/shared.js";
 
 export default guard(async (req, res) => {
-  const { placeId, siteName, prompt } = req.body;
-  if (!placeId || !siteName || !prompt) throw new Error("placeId, siteName and prompt are required");
+  const { place, siteName, prompt } = req.body; // place = the record picked from the search results
+  if (!place?.data_id || !siteName || !prompt) throw new Error("place, siteName and prompt are required");
 
-  const { business, photos } = await placeDetails(placeId);
-  const images = await downloadPhotos(photos);
+  const business = buildBusiness(place);
+  const { imageUrls, reviews } = await placeExtras(place);
+  if (reviews.length) business.reviews_sample = reviews;
+  const images = await downloadImages(imageUrls);
 
   const userPrompt = `${prompt}
 
@@ -21,6 +23,6 @@ ${Object.keys(images).map((p) => "/" + p).join("\n") || "(none, use CSS/SVG plac
 
   const name = slug(siteName);
   const url = await deployToVercel(name, fileMap);
-  // The server stores nothing: the panel keeps these files in your browser for the backend step.
-  res.json({ url, name, placeId, files: generated });
+  // The server stores nothing: the panel keeps these in your browser for the backend step.
+  res.json({ url, name, business, imageUrls, files: generated });
 });
