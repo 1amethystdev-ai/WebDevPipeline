@@ -1,4 +1,4 @@
-import { guard, slug, buildBusiness, placeExtras, downloadImages, generateFiles, deployToVercel, textFile } from "../lib/shared.js";
+import { guard, slug, buildBusiness, placeExtras, downloadImages, generateFiles, deployToVercel, textFile, prepareSite } from "../lib/shared.js";
 
 export default guard(async (req, res) => {
   const { place, siteName, prompt } = req.body; // place = the record picked from the search results
@@ -22,7 +22,7 @@ ${Object.keys(images).map((p) => "/" + p).join("\n") || "(none, use CSS/SVG plac
   for (const [k, v] of Object.entries(generated)) fileMap[k] = textFile(v);
 
   const name = slug(siteName);
-  const url = await deployToVercel(name, fileMap);
+  const url = await deployToVercel(name, prepareSite(fileMap));
   // The server stores nothing: the panel keeps these in your browser for the backend step.
   res.json({ url, name, business, imageUrls, files: generated });
 });
