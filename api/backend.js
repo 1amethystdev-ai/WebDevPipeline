@@ -1,4 +1,4 @@
-import { guard, slug, downloadImages, generateFiles, deployToVercel, textFile } from "../lib/shared.js";
+import { guard, slug, downloadImages, generateFiles, deployToVercel, textFile, prepareSite } from "../lib/shared.js";
 
 export default guard(async (req, res) => {
   const { job, prompt, notes } = req.body; // job = { name, business, imageUrls, files } saved by the panel
@@ -24,6 +24,6 @@ ${existing}`;
   const fileMap = { ...images };
   for (const [k, v] of Object.entries(merged)) fileMap[k] = textFile(v);
 
-  const url = await deployToVercel(slug(job.name), fileMap);
+  const url = await deployToVercel(slug(job.name), prepareSite(fileMap));
   res.json({ url, changed: Object.keys(generated), files: merged });
 });
