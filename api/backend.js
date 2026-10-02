@@ -1,11 +1,10 @@
-import { guard, slug, placeDetails, downloadPhotos, generateFiles, deployToVercel, textFile } from "../lib/shared.js";
+import { guard, slug, downloadImages, generateFiles, deployToVercel, textFile } from "../lib/shared.js";
 
 export default guard(async (req, res) => {
-  const { job, prompt, notes } = req.body; // job = { name, placeId, files } saved by the panel
-  if (!job?.files || !job?.placeId) throw new Error("Build the frontend first (no saved site found).");
+  const { job, prompt, notes } = req.body; // job = { name, business, imageUrls, files } saved by the panel
+  if (!job?.files || !job?.business) throw new Error("Build the frontend first (no saved site found).");
 
-  const { business, photos } = await placeDetails(job.placeId);
-  const images = await downloadPhotos(photos);
+  const images = await downloadImages(job.imageUrls || []); // no search credits used here
 
   const existing = Object.entries(job.files).map(([k, v]) => `=== FILE: ${k} ===\n${v}`).join("\n");
   const userPrompt = `${prompt}
@@ -14,7 +13,7 @@ CLIENT NOTES / REQUIREMENTS FOR THE BACKEND:
 ${notes || "(none)"}
 
 BUSINESS DATA:
-${JSON.stringify(business, null, 2)}
+${JSON.stringify(job.business, null, 2)}
 
 EXISTING FRONTEND FILES (the client approved this; do not redesign it, only change what is needed to connect it to the backend):
 ${existing}`;
