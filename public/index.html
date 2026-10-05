@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Site pipeline panel</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --ink:#1b1f24; --mute:#6a737d; --line:#d9dde3; --accent:#1f6feb; --ok:#1a7f37; --err:#cf222e; }
   @media (prefers-color-scheme: dark) { :root { --bg:#14171a; --card:#1d2125; --ink:#e6e8eb; --mute:#98a1ab; --line:#33393f; --accent:#4c8dff; --ok:#3fb950; --err:#ff6b6b; } }
@@ -50,6 +51,12 @@
     <input type="text" id="siteName" placeholder="naina-home-decore">
     <label for="frontPrompt">Frontend prompt (permanent version lives in lib/prompts.js)</label>
     <textarea id="frontPrompt"></textarea>
+    <label for="scope">Site size</label>
+    <select id="scope">
+      <option value="one" selected>One page (fastest, most reliable)</option>
+      <option value="small">Small: home, projects, estimate, contact</option>
+      <option value="full">Full: the whole prompt as written (may get cut off)</option>
+    </select>
     <button id="frontBtn" disabled>Generate and deploy frontend</button>
   </section>
 
@@ -57,7 +64,11 @@
     <h2>3. Backend (after client approval)</h2>
     <label for="jobSelect">Site</label>
     <select id="jobSelect"></select>
-    <div class="hint">Saved sites are stored in this browser only. Use the same browser for step 3.</div>
+    <div class="hint">Saved sites are stored in this browser only. Use the same browser for step 3, or back them up here.</div>
+    <div class="row" style="margin-top:8px">
+      <button id="zipBtn" disabled>Download site (.zip)</button>
+      <button id="ghBtn" disabled>Save to GitHub</button>
+    </div>
     <label for="notes">Client requirements for the backend (optional)</label>
     <textarea id="notes" style="min-height:70px" placeholder="e.g. contact form emails to ..., booking calendar, admin login"></textarea>
     <label for="backPrompt">Backend prompt (permanent version lives in lib/prompts.js)</label>
@@ -113,7 +124,11 @@ function loadJobs() {
   syncBackBtn();
 }
 
-function syncBackBtn() { $("backBtn").disabled = !($("approved").checked && $("jobSelect").value); }
+function syncBackBtn() {
+  $("backBtn").disabled = !($("approved").checked && $("jobSelect").value);
+  $("zipBtn").disabled = $("ghBtn").disabled = !$("jobSelect").value;
+}
+const ghLine = (d) => d.github ? `\nGitHub: <a href="${d.github}" target="_blank">${d.github}</a>` : d.githubError ? `\nGitHub backup failed: ${d.githubError}` : "";
 $("approved").addEventListener("change", syncBackBtn);
 $("jobSelect").addEventListener("change", syncBackBtn);
 
@@ -134,11 +149,11 @@ $("frontBtn").onclick = async () => {
   $("frontBtn").disabled = true;
   try {
     log("Pulling Maps data, generating the site, deploying. This takes 1-3 minutes...");
-    const d = await api("frontend", { place: selected.raw, siteName: $("siteName").value, prompt: $("frontPrompt").value });
+    const d = await api("frontend", { place: selected.raw, siteName: $("siteName").value, prompt: $("frontPrompt").value, scope: $("scope").value });
     const jobs = getJobs();
-    jobs[d.name] = { name: d.name, business: d.business, imageUrls: d.imageUrls, files: d.files, frontendUrl: d.url };
+    jobs[d.name] = { name: d.name, business: d.business, imageUrls: d.imageUrls, files: d.files, frontendUrl: d.url, githubUrl: d.github || undefined };
     setJobs(jobs);
-    log(`Frontend live: <a href="${d.url}" target="_blank">${d.url}</a>\nFiles: ${Object.keys(d.files).join(", ")}`, "ok");
+    log(`Frontend live: <a href="${d.url}" target="_blank">${d.url}</a>\nFiles: ${Object.keys(d.files).join(", ")}${ghLine(d)}`, "ok");
     loadJobs();
   } catch (e) { log(e.message, "err"); }
   $("frontBtn").disabled = false;
@@ -151,10 +166,42 @@ $("backBtn").onclick = async () => {
     const jobs = getJobs();
     const job = jobs[$("jobSelect").value];
     const d = await api("backend", { job, prompt: $("backPrompt").value, notes: $("notes").value });
-    job.files = d.files; job.backendUrl = d.url;
+    job.files = d.files; job.backendUrl = d.url; if (d.github) job.githubUrl = d.github;
     setJobs(jobs);
-    log(`Backend deployed: <a href="${d.url}" target="_blank">${d.url}</a>\nFiles changed or added: ${d.changed.join(", ")}`, "ok");
+    log(`Backend deployed: <a href="${d.url}" target="_blank">${d.url}</a>\nFiles changed or added: ${d.changed.join(", ")}${ghLine(d)}`, "ok");
     loadJobs();
+  } catch (e) { log(e.message, "err"); }
+  syncBackBtn();
+};
+
+$("zipBtn").onclick = async () => {
+  const job = getJobs()[$("jobSelect").value];
+  if (!job) return log("Pick a site first.", "err");
+  $("zipBtn").disabled = true;
+  try {
+    log("Collecting files and photos...");
+    const d = await api("export", { job });
+    const zip = new JSZip();
+    for (const [path, f] of Object.entries(d.files)) zip.file(path, f.data, f.encoding === "base64" ? { base64: true } : {});
+    if (d.skipped.length) zip.file("IMAGE_URLS.txt", "Photos were too large to bundle. Download them soon, the links can expire:\n" + d.skipped.join("\n") + "\n");
+    const blob = await zip.generateAsync({ type: "blob" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = job.name + ".zip"; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    log(`Downloaded ${job.name}.zip (${Object.keys(d.files).length} files)${d.skipped.length ? "\nPhotos were too large to bundle, their links are in IMAGE_URLS.txt." : ""}`, "ok");
+  } catch (e) { log(e.message, "err"); }
+  syncBackBtn();
+};
+
+$("ghBtn").onclick = async () => {
+  const jobs = getJobs(), job = jobs[$("jobSelect").value];
+  if (!job) return log("Pick a site first.", "err");
+  $("ghBtn").disabled = true;
+  try {
+    log("Pushing to GitHub...");
+    const d = await api("github", { job });
+    job.githubUrl = d.github; setJobs(jobs);
+    log(`Saved: <a href="${d.github}" target="_blank">${d.github}</a>`, "ok");
   } catch (e) { log(e.message, "err"); }
   syncBackBtn();
 };
